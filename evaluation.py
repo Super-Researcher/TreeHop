@@ -255,7 +255,7 @@ if __name__ == '__main__':
     n_total = df_match["set_evidence_title"].map(len).sum()
 
     print("Recall on each iteration:")
-    df_match[list(range(args.n_hop))].sum(axis=0) / n_total
+    print(df_match[list(range(args.n_hop))].sum(axis=0) / n_total)
 
     print("Stats by question type:")
     print(
