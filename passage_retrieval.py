@@ -198,10 +198,9 @@ class Retriever:
                 self.indexer.serialize(embeddings_dir)
 
         # load passages
-        print("loading passages")
         self.passages = src.data.load_regular_data(self.passages)
         self.passage_id_map = {x["id"]: x for x in self.passages}
-        print("passages have been loaded")
+        print(f"{len(self.passages)} passages have been loaded")
 
     def get_passage_embedding_by_id(self, passage_ids):
         if isinstance(passage_ids, int):
