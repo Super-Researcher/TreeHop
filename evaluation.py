@@ -179,8 +179,7 @@ if __name__ == '__main__':
         generate_batch_size=args.generate_batch_size,
         redundant_pruning=args.redundant_pruning,
         layerwise_top_pruning=args.layerwise_top_pruning,
-        return_tree=True,
-        return_query_similarity=True
+        return_tree=True
     )
 
     df_match = df_QA.apply(
