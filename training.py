@@ -224,7 +224,7 @@ if __name__ == '__main__':
     args = parse_args()
 
     if DEVICE == "mps":
-        # dgl does not support mps on mac m1 chips
+        # dgl does not support mps on Metal
         DEVICE = "cpu"
 
     print(f"Using {DEVICE}")
@@ -246,23 +246,6 @@ if __name__ == '__main__':
         shuffle=True,
         num_workers=0,
     )
-
-    # eval_set = GraphRerankerDataset(
-    #     "2wiki", "eval",
-    #     num_negatives=5,
-    #     graph_cache_dir=args.graph_cache_dir,
-    # )
-    # eval_loader = DataLoader(
-    #     dataset=eval_set,
-    #     batch_size=1280,
-    #     collate_fn=collate_batch,
-    #     shuffle=False,
-    #     num_workers=0,
-    # )
-
-    # i = 8
-    # plot_tree(eval_set.graphs[i].to_networkx())
-    # eval_set.df_dataset["evidences"].iloc[i]
 
     # create the model
     model = TreeHopModel(
@@ -306,20 +289,11 @@ if __name__ == '__main__':
             loss = gather_graph_contrastive_losses(
                 g, negative_mode=args.neg_mode, num_negatives=args.n_neg, temperature=args.temperature
             )
-            # remove root query
-            # b_obs = y != NodeType.query.value
-            # y, h, logits = y[b_obs], h[b_obs], logits[b_obs]
-            # logp = F.log_softmax(logits, 1)
-            # loss += F.nll_loss(logp, y != NodeType.leaf.value, reduction="sum")
-
             loss.backward()
             optimizer.step()
-            # pred = torch.argmax(logits, 1)
-            # acc = torch.sum(torch.eq(y, pred)) / len(y)
 
             epoch_train_loss.append(loss.item())
             pbar.set_postfix({"loss": f"{loss.item():.3f}"}, refresh=False)
-            # pbar.set_postfix({"Loss": f"{loss.item():.3f}", "Acc": f"{acc:.3%}"})
 
         d_stats = evaluate_retrieve(model.eval(), n_hop=2, top_n=5)
         epoch_pbar.set_postfix(d_stats)
@@ -335,7 +309,6 @@ if __name__ == '__main__':
         )
 
         train_loader.dataset.reset()
-        # eval_loader.dataset.reset()
         epoch_train_loss.clear()
         epoch_eval_loss.clear()
         epoch_eval_score.clear()

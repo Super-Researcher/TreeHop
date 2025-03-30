@@ -2,7 +2,7 @@ from uuid import uuid4
 import numpy as np
 import pandas as pd
 import networkx as nx
-from typing import List, Iterable, Union
+from typing import List, Union
 import matplotlib.pyplot as plt
 
 from utils import NodeType
@@ -14,14 +14,11 @@ class TreeHopGraph(nx.DiGraph):
         query: str,
         passages: List[List[dict]],
         top_n: int,
-        threshold: float = None,
-        query_sim: Iterable = None,
         redundant_pruning=True,
         layerwise_top_pruning: Union[int, bool] = True,
     ):
         super().__init__()
         self.top_n = top_n
-        self.threshold = threshold
         self.layerwise_top_pruning = top_n if layerwise_top_pruning is True else layerwise_top_pruning
 
         self._map_uuid = {NodeType.query.value: NodeType.query.value}
@@ -31,7 +28,7 @@ class TreeHopGraph(nx.DiGraph):
         self._last_passage_layer = None
 
         self.add_node(NodeType.query.value, title=f'"{query}"', text='', mask=True)
-        self.add_passage_layer(passages, query_sim=query_sim, threshold=threshold,
+        self.add_passage_layer(passages,
                                redundant_pruning=redundant_pruning,
                                layerwise_top_pruning=self.layerwise_top_pruning)
 
@@ -58,31 +55,13 @@ class TreeHopGraph(nx.DiGraph):
         self,
         passage_layer,
         redundant_pruning=True,
-        query_sim=None,
-        threshold: float = None,
     ) -> np.array:
-        threshold = self.threshold if threshold is None else threshold
         df = pd.DataFrame([psg for passages in passage_layer for psg in passages])
         if redundant_pruning:
             srs_duplicate_mask = df["id"].apply(lambda x: x in self._passage_ids)
         else:
             srs_duplicate_mask = pd.Series([False] * df.shape[0])
-        # df["max_score"] = df.groupby("id")["score"].transform("max")
-        # # exclude duplicated retrieved passages except for those who score highest
-        # srs_highest_score_mask = df["max_score"] == df["score"]
-
-        # srs_duplicate_mask = srs_duplicate_mask & ~srs_highest_score_mask
         df.loc[srs_duplicate_mask, "score"] = self._duplicate_mask
-
-        if query_sim is not None:
-            scaled_score = df["score"] - df["score"].min()
-            log_score = scaled_score * 1.5305 + df["score"].min() * 0.3516 + query_sim * 1.8445 - 7.7742
-            with np.errstate(divide="ignore"):
-                # silent warning and enable infinitive log threshold
-                log_threshold = np.log(np.divide(threshold, 1. - threshold))
-
-            srs_score_mask = log_score < log_threshold
-            srs_duplicate_mask |= srs_score_mask
 
         idx_rank_score = np.argsort(df["score"].to_numpy())
         idx_rank_score[srs_duplicate_mask] = self._duplicate_mask
@@ -95,8 +74,6 @@ class TreeHopGraph(nx.DiGraph):
         passage_layer,
         redundant_pruning=True,
         layerwise_top_pruning: Union[int, bool] = True,
-        query_sim=None,
-        threshold=0.25,
         min_ranking=None
     ) -> None:
         last_query_ids = self.get_query_ids()
@@ -113,8 +90,6 @@ class TreeHopGraph(nx.DiGraph):
             layer_ranks = self._rank_passage_layer(
                 passage_layer,
                 redundant_pruning=redundant_pruning,
-                query_sim=query_sim,
-                threshold=threshold
             )
             min_ranking = max(layer_ranks.max(axis=None) - layerwise_top_pruning + 1, 0)
             self._query_passage_mask = layer_ranks >= min_ranking

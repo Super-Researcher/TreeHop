@@ -1,4 +1,4 @@
-from typing import List, Union
+from typing import Union
 import dgl
 import numpy as np
 
@@ -72,16 +72,6 @@ class AttentionHead2D(nn.Module):
 
     def forward(self, Q, K, V):
         Q, K, V = self.W_Q(Q), self.W_K(K), self.W_V(V)
-        # Q = self.activate_attn(self.W_Q(Q))
-        # K = self.activate_attn(self.W_K(K))
-        # V = self.activate_attn(self.W_V(V))
-
-        # Q = self.activate_attn(self.W_Q2(Q)) + Q
-        # K = self.activate_attn(self.W_K2(K)) + K
-        # V = self.activate_attn(self.W_V2(V)) + V
-
-        # b = batch, u = in_nodes, d = dimension
-        # QK = torch.einsum("bud,bud->bd", Q, K)
         if Q.dim() == 3:
             QK = torch.einsum("bud,bud->bd", Q, K)
         elif Q.dim() == 2:
@@ -132,61 +122,6 @@ class MultiHeadAttention2D(nn.Module):
         return attn_out
 
 
-class DotProductAttention3D(nn.Module):
-    def __init__(self):
-        super(DotProductAttention3D, self).__init__()
-
-    def forward(self, Q, K, V):
-        # b = batch, u = in_nodes, d = dimension
-        scores = Q @ K.transpose(-2, -1) / Q.shape[-1] ** 0.5
-        attn = F.softmax(scores, dim=-1)
-
-        output = attn @ V
-        return output
-
-
-class LinearAttention2D(nn.Module):
-    def __init__(self, eps=1e-6):
-        super(LinearAttention2D, self).__init__()
-        self.eps = eps
-
-    def elu1p(self, x):
-        return F.elu(x) + 1.
-
-    def forward(self, Q, K, V):
-        Q = self.elu1p(Q)
-        K = self.elu1p(K)
-        # n = number of neighbours, d = number of embedding dimensions
-        # KV = torch.einsum("nd,nd->n", K, V)
-        KV = torch.einsum("nsd,nsd->ns", K, V)
-        # Compute the normalizer
-        Z = 1. / (torch.einsum("nld,nd->nl", Q, K.sum(dim=1)) + self.eps)
-        # Finally compute and return the new values
-        V = torch.einsum("nld,ns,nl->nd", Q, KV, Z)
-        return V.contiguous()
-
-
-class LinearAttention3D(nn.Module):
-    def __init__(self, eps=1e-6):
-        super(LinearAttention3D, self).__init__()
-        self.eps = eps
-
-    def elu1p(self, x):
-        return F.elu(x) + 1.
-
-    def forward(self, Q, K, V):
-        Q = self.elu1p(Q)
-        K = self.elu1p(K)
-        # n = number of neighbours, d = number of embedding dimensions
-        # KV = torch.einsum("nd,nd->n", K, V)
-        KV = torch.einsum("nsd,nsd->ns", K, V)
-        # Compute the normalizer
-        Z = 1. / (torch.einsum("nld,nd->nl", Q, K.sum(dim=1)) + self.eps)
-        # Finally compute and return the new values
-        V = torch.einsum("nld,ns,nl->nd", Q, KV, Z)
-        return V.contiguous()
-
-
 class TreeHopNode(nn.Module):
     def __init__(self, embed_size, g_size, mlp_size, n_mlp=1, n_head=1):
         super(TreeHopNode, self).__init__()
@@ -196,28 +131,16 @@ class TreeHopNode(nn.Module):
             num_mlp=n_mlp,
             dropout=0.
         )
-        # self.forget_gate = MultiHeadAttention2D(
-        #     embed_size, g_size, mlp_size,
-        #     num_heads=n_head,
-        #     num_mlp=n_mlp,
-        #     dropout=0.
-        # )
         self.update_attn_scale = nn.Linear(g_size * n_head, embed_size, bias=False)
-        # self.forget_attn_scale = nn.Linear(g_size * n_head, embed_size, bias=False)
 
     def reduce_func(self, nodes):
         # message passing
         Q = nodes.mailbox["q"].clone().squeeze(1)         # last query
-
         K = nodes.data["rep"]           # this ctx
         V_update = nodes.data["rep"]           # this ctx
 
         update_gate = self.update_gate(Q, K, V_update)
 
-        # add & norm
-        # h = self.attn_scale(update_gate + forget_gate) + Q - K_forget
-        # Q = self.activate(self.W_Q(Q)) + Q
-        # K_update = self.activate(self.W_K(K_update)) + K_update
         h = Q - K + self.update_attn_scale(update_gate)
         return {"h": h}
 
@@ -256,11 +179,6 @@ class TreeHopModel(nn.Module):
         logits : Tensor
             The prediction of each node.
         """
-        # to heterogenous graph
-        # g = dgl.graph(g.edges())
-        # feed embedding
-        # embeds = self.embedding(batch.wordid * batch.mask)
-
         # propagate
         if "y" in g.ndata:
             mask_query = g.ndata["y"] != NodeType.query.value
@@ -280,22 +198,16 @@ class TreeHopModel(nn.Module):
                 return
 
             _, mask_query = g.find_edges(idx_prop_edges)
-            # g.ndata["h"][mask_query] = F.normalize(g.ndata["h"][mask_query], dim=-1)
             g.prop_edges(
                 idx_prop_edges,
-                # message_func=node.message_func,
                 message_func=dgl.function.copy_u('h', 'q'),
                 reduce_func=self.node.reduce_func,
-                # apply_node_func=self.node.apply_node_func,
             )
             h = g.ndata["h"][mask_query]
         else:
             raise LookupError("Unable to determine training or inference target")
 
         h = self.dropout(h)
-        # h = self.activate(self.linear(h)) + g.ndata["q"][non_query]
-        # g.ndata["h"][non_query] = self.LN_o(h)
-        # g.ndata["h"][non_query] = h
         return h
 
     def to(self, device):
@@ -420,18 +332,6 @@ class TreeHopModel(nn.Module):
             if q_emb.shape[0] != ctx_embs.shape[0]:
                 raise IndexError(f"Number of query and context embedding must match "
                                  f"({q_emb.shape[0]} vs {ctx_embs.shape[0]})")
-            # if ctx_embs.dim() == 2:
-            #     if self._graphs is None:
-            #         lst_node_out = [[0]] * len(ctx_embs)
-            #         lst_node_in = [[1]] * len(ctx_embs)
-            #         ary_rep = [torch.stack([q, ctx]) for q, ctx in zip(q_emb, ctx_embs)]
-            #         ary_h = q_emb.repeat(1, 2).view(len(ctx_embs), 2, -1)
-            #     else:
-            #         lst_node_out = idx_last_queries
-            #         lst_node_in = [[g.num_nodes()] for g in self._graphs]
-            #         ary_rep = ctx_embs
-            #         ary_h = q_emb
-            # elif ctx_embs.dim() == 3:
             if self._graphs is None:
                 n_nodes = 1 + ctx_embs.shape[1]
                 lst_node_out = [[0] * ctx_embs.shape[1]] * len(ctx_embs)
@@ -445,9 +345,6 @@ class TreeHopModel(nn.Module):
                                 for g, out in zip(self._graphs, lst_node_out)]
                 ary_rep = ctx_embs
                 ary_h = q_emb
-            # else:
-            #     raise IndexError(f"Expect 2 or 3 dimensions for context embeddings with shape"
-                                #  f"{ctx_embs.shape} given query embeddings shape {q_emb.shape}")
         else:
             raise IndexError(f"Expect 1 or 2 dimensions for query embeddings, got {q_emb.shape}")
 
@@ -470,8 +367,6 @@ class TreeHopModel(nn.Module):
                 self._graphs.append(g.to(self.device))
         else:
             i_emb = 0
-            # ary_rep = ary_rep.to(self.device)
-            # ary_h = ary_h.to(self.device)
             for g, node_out, node_in, idx_last_q in zip(self._graphs,
                                                         lst_node_out,
                                                         lst_node_in,
@@ -536,10 +431,6 @@ class TreeHopModel(nn.Module):
 
         # sync intermediate query embeddings
         self._graphs = lst_graphs
-        # simply assigning lst_graphs to self._graphs will cause dgl error
-        # for old_g, new_g in zip(self._graphs, lst_graphs):
-        #     old_g.ndata['h'] = new_g.ndata['h']
-
         next_q_embs = torch.cat(lst_next_q_embs)
         return next_q_embs
 

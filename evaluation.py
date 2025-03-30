@@ -96,7 +96,6 @@ def evaluate_dataset(
     lst_questions = df_QA["question"].to_list()
 
     retriever = get_retriever(dataset_name, model.eval())
-    # retriever.search_passages(["Who is "])
 
     retrieved_result = retriever.multihop_search_passages(
         lst_questions,
@@ -176,7 +175,6 @@ if __name__ == '__main__':
         df_QA["question"].to_list(),
         n_hop=args.n_hop,
         top_n=args.top_n,
-        # threshold=0.25,
         index_batch_size=args.index_batch_size,
         generate_batch_size=args.generate_batch_size,
         redundant_pruning=args.redundant_pruning,

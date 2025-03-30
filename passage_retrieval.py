@@ -33,7 +33,7 @@ search_passage_results = namedtuple(
 
 multihop_search_passage_results = namedtuple(
     "multihop_search_passage_results",
-    fields := ["passage", "tree_hop_graph", "query_similarity"],
+    fields := ["passage", "tree_hop_graph"],
     defaults=(None,) * len(fields)
 )
 
@@ -305,14 +305,12 @@ class MultiHopRetriever(Retriever):
         query: Union[List[str], str],
         n_hop: int,
         top_n=10,
-        threshold=0.25,
         index_batch_size=10240,
         generate_batch_size=1024,
         show_progress=True,
         redundant_pruning=True,
         layerwise_top_pruning: Union[int, bool] = True,
-        return_tree=False,
-        return_query_similarity=False
+        return_tree=False
     ):
         assert isinstance(n_hop, int) and n_hop > 0, "n_hop must be a positive integer"
         pbar = tqdm(
@@ -348,15 +346,6 @@ class MultiHopRetriever(Retriever):
                         #   "elapsed": time.time() - start_time_generate
                           })
 
-        # last_q_emb = (torch.from_numpy(search_result.query_embedding)
-        #               .to(self.tree_hop_model.device)
-        #               .repeat(1, top_n)
-        #               .view(-1, q_emb.shape[1]))
-
-        # query_sims = F.cosine_similarity(q_emb, last_q_emb)
-        # query_sims = query_sims.cpu().numpy()
-        # tree_hop_graphs = [TreeHopGraph(q, [psg], query_sim=q_sim, top_n=top_n, threshold=0.)
-        #                    for q, psg, q_sim in zip(query, search_result.passage, query_sims)]
         tree_hop_graphs = [TreeHopGraph(q, [psg], top_n=top_n,
                                         redundant_pruning=redundant_pruning,
                                         layerwise_top_pruning=layerwise_top_pruning)
@@ -401,14 +390,6 @@ class MultiHopRetriever(Retriever):
                             #   "elapsed": time.time() - start_time_generate
                               })
 
-            # last_q_emb = (last_q_emb
-            #               .to(self.tree_hop_model.device)
-            #               .repeat(1, top_n)
-            #               .view(-1, q_emb.shape[1]))
-
-            # query_sims = F.cosine_similarity(q_emb, last_q_emb)
-            # query_sims = query_sims.cpu().numpy()
-
             query_passage_masks = []
             lst_passages = []
             i_current = 0
@@ -419,13 +400,10 @@ class MultiHopRetriever(Retriever):
                     continue
 
                 passage_layer = search_result.passage[i_current: i_current + num_query]
-                # q_sim = query_sims[i_current * top_n: (i_current + num_query) * top_n]
                 graph.add_passage_layer(
                     passage_layer,
                     redundant_pruning=redundant_pruning,
                     layerwise_top_pruning=layerwise_top_pruning,
-                    # query_sim=q_sim,
-                    threshold=threshold,
                 )
 
                 query_passage_masks.append(graph.query_passage_mask)
@@ -444,8 +422,7 @@ class MultiHopRetriever(Retriever):
         pbar.close()
         return multihop_search_passage_results(
             passage=lst_results,
-            tree_hop_graph=tree_hop_graphs if return_tree else None,
-            # query_similarity=query_sims if return_query_similarity else None
+            tree_hop_graph=tree_hop_graphs if return_tree else None
         )
 
 

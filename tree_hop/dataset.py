@@ -341,10 +341,6 @@ class TreeHopTrainDataset(Dataset):
         lst_last_layer_pos.extend(prev_pos)
         y = torch.as_tensor(lst_y, device=device)
         y[lst_last_layer_pos] = NodeType.leaf.value
-        # lst_node_out.extend(lst_last_layer_pos)
-        # lst_node_in.extend([idx_current] * len(lst_last_layer_pos))
-        # lst_idx_ctxs.append(i)
-        # lst_y.append(NodeType.pesudo_node.value)
 
         graph = dgl.graph(
             (lst_node_out, lst_node_in),
