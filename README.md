@@ -2,9 +2,9 @@
 
 ## System Requirement
 > Ubuntu 18.06 LTS+.
-> Nvidia GPU with 32GB of RAM at minimum.
-> 64GB of system RAM.
-> 50GB of free space on hard drive.
+  Nvidia GPU with 32GB of RAM at minimum.
+  64GB of system RAM.
+  50GB of free space on hard drive.
 
 
 ### Embedding Preliminary
@@ -27,10 +27,10 @@ python init_multihop_rag.py
 
 ```sh
 python evaluation.py \
-    --state_dict "checkpoint/treehop_2wiki=0.131&musique=0.028&multihop_rag=0.095__epoch=5&n_neg=5&neg_mode=paired&g_size=2048&mlp_size=2048&n_mlp=3&n_head=1&dropout=0.1&batch_size=64&lr=6e-05&temperature=0.15&weight_decay=2e-08.pt" \
+    --state_dict "checkpoint/treehop__epoch=8&n_neg=5&neg_mode=paired&g_size=2048&mlp_size=2048&n_mlp=3&n_head=1&dropout=0.1&batch_size=64&lr=6e-05&temperature=0.15&weight_decay=2e-08.pt" \
     --dataset_name 2wiki \
-    --n_hop 2 \
-    --top_n 10 \
+    --n_hop 3 \
+    --top_n 5 \
     --redundant_pruning True \
     --layerwise_top_pruning True
 ```
