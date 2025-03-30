@@ -167,9 +167,10 @@ if __name__ == '__main__':
     args = parse_args()
 
     model = get_evaluate_model(args.state_dict)
-
     df_QA = get_dataset(args.dataset_name)
     retriever = get_retriever(args.dataset_name, model)
+
+    print(f"Evaluating {args.dataset_name} dataset with recall@{args.top_n} under {args.n_hop} hops")
 
     retrieved_result = retriever.multihop_search_passages(
         df_QA["question"].to_list(),
@@ -191,8 +192,8 @@ if __name__ == '__main__':
     df_match = pd.concat([df_QA, df_match], axis=1)
     n_total = df_match["set_evidence_title"].map(len).sum()
 
-    print("Recall on each iteration:")
-    print(df_match[list(range(args.n_hop))].sum(axis=0) / n_total)
+    print("Iteration recalls:")
+    print(df_match[list(range(args.n_hop))].cumsum(axis=0) / n_total)
 
     print("Stats by question type:")
     print(
