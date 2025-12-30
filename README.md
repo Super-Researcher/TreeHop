@@ -1,4 +1,4 @@
-# TreeHop: Generate and Filter Next Query Embeddings Efficiently for Multi-hop Question Answering
+# TreeHop: Efficient Embedding-Level Query Rewriter 
 
 ## System Requirement
 > Ubuntu 18.06 LTS+ or MacOS Sequoia+.
