@@ -124,7 +124,7 @@ def parse_args():
     parser.add_argument(
         "--dataset_name",
         type=str,
-        choices=["2wiki", "musique", "multihop_rag"],
+        choices=["hotpotqa_distractor", "2wiki", "musique", "multihop_rag"],
     )
 
     # for multihop retrieval
@@ -151,11 +151,11 @@ def parse_args():
         help="Batch size for TreeHop inference"
     )
     parser.add_argument(
-        "--redundant_pruning", type=bool, default=True,
+        "--prune_redundant", action='store_true',
         help="Toggle stop criterion: redundancy pruning"
     )
     parser.add_argument(
-        "--layerwise_top_pruning", type=bool, default=True,
+        "--prune_layer_top", action='store_true',
         help="Toggle stop criterion: layer-wise top pruning"
     )
 
@@ -178,8 +178,8 @@ if __name__ == '__main__':
         top_n=args.top_n,
         index_batch_size=args.index_batch_size,
         generate_batch_size=args.generate_batch_size,
-        redundant_pruning=args.redundant_pruning,
-        layerwise_top_pruning=args.layerwise_top_pruning,
+        redundant_pruning=args.prune_redundant,
+        layerwise_top_pruning=args.prune_layer_top,
         return_tree=True
     )
 
@@ -197,7 +197,7 @@ if __name__ == '__main__':
 
     print("Stats by question type:")
     print(
-        df_match.groupby(["type", ])[list(range(args.n_hop))].agg(["count", "mean"])
+        df_match.groupby("type")[list(range(args.n_hop))].agg(["count", "mean"])
     )
 
     k = 0.

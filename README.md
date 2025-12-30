@@ -24,9 +24,9 @@ python init_multihop_rag.py
 
 ## Reproduction
 ### To evaluate TreeHop multihop retrieval, run the following code. Here we take 2WikiMultihop dataset and recall@5 with three hops as example.
-* To change dataset, replace `2wiki` with `musique` or `multihop_rag`.
+* To change dataset, replace `2wiki` with `musique`, `multihop_rag` or `hotpotqa_distractor`.
 * Revise `n_hop` and `top_n` to change number of hops and top retrieval settings. 
-* Toggle `redundant_pruning` and `layerwise_top_pruning` to reproduce our ablation study on stop criterion.
+* Toggle `prune_redundant` and `prune_layer_top` to reproduce our ablation study on stop criterion.
 
 ```sh
 python evaluation.py \
@@ -34,8 +34,8 @@ python evaluation.py \
     --dataset_name multihop_rag \
     --n_hop 3 \
     --top_n 5 \
-    --redundant_pruning True \
-    --layerwise_top_pruning True
+    --redundant_pruning \
+    --layerwise_top_pruning
 ```
 
 
