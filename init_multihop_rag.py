@@ -11,6 +11,9 @@ import os
 
 from src.normalize_text import normalize
 
+# these generators use BGE-m3; embeddings live under embedding_data/<embedding>/
+EMBEDDING_NAME = "bge-m3"
+
 
 if __name__ == '__main__':
     file_path = "eval_data/"
@@ -45,23 +48,15 @@ if __name__ == '__main__':
         return_colbert_vecs=False
     )
 
-    os.makedirs(f"embedding_data/{dataset_name}/", exist_ok=True)
+    os.makedirs(f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/", exist_ok=True)
     np.save(
-        f"embedding_data/{dataset_name}/{dataset_type}_query_dense.npy",
+        f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_query_dense.npy",
         query_embeddings["dense_vecs"]
     )
     np.save(
-        f"embedding_data/{dataset_name}/{dataset_type}_content_dense.npy",
+        f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_content_dense.npy",
         content_embeddings["dense_vecs"]
     )
-
-    # with open(f"embedding_data/{dataset_name}/{dataset_type}_query_sparse.pkl", "wb") as f:
-    #     pickle.dump(query_embeddings["lexical_weights"], f)
-    # with open(f"embedding_data/{dataset_name}/{dataset_type}_content_sparse.pkl", "wb") as f:
-    #     pickle.dump(content_embeddings["lexical_weights"], f)
-
-    # with open(f"embedding_data/{dataset_name}/multi_vec.pkl", "wb") as f:
-    #     pickle.dump(query_embeddings["colbert_vecs"], f)
 
     # save corresponding context array indices
     df_dataset["id"] = df_dataset.index

@@ -11,6 +11,9 @@ from FlagEmbedding import BGEM3FlagModel
 from src.utils import DEVICE
 from src.normalize_text import normalize
 
+# these generators use BGE-m3; embeddings live under embedding_data/<embedding>/
+EMBEDDING_NAME = "bge-m3"
+
 
 lst_vectorize = [
     ('2wiki', 'train'), ('2wiki', 'eval'),
@@ -59,41 +62,34 @@ if __name__ == '__main__':
             getattr(torch, DEVICE).empty_cache()
 
             np.save(
-                f"embedding_data/{dataset_name}/{dataset_type}_dense{i}.npy",
+                f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_dense{i}.npy",
                 embeddings["dense_vecs"]
             )
             # lst_embeddings.append(embeddings)
 
-        import glob
-        input_paths = glob.glob(f"embedding_data/{dataset_name}/{dataset_type}_dense[0-9]*.npy")
+        input_paths = glob.glob(f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_dense[0-9]*.npy")
         input_paths = sorted(input_paths, key=lambda path: int(path.split("_dense")[1].rstrip(".npy")))
         lst_embeddings = []
         for path in input_paths:
-            if not path.startswith(f"embedding_data/{dataset_name}/{dataset_type}_dense") or not path.endswith(".npy"):
+            if not path.startswith(f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_dense") or not path.endswith(".npy"):
                 continue
 
             lst_embeddings.append(np.load(path))
 
         all_embeddings = np.concatenate(lst_embeddings, axis=0)
 
-        os.makedirs(f"embedding_data/{dataset_name}", exist_ok=True)
+        os.makedirs(f"embedding_data/{EMBEDDING_NAME}/{dataset_name}", exist_ok=True)
 
         np.save(
-            f"embedding_data/{dataset_name}/{dataset_type}_dense.npy",
+            f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_dense.npy",
             all_embeddings)
         np.save(
-            f"embedding_data/{dataset_name}/{dataset_type}_content_dense.npy",
+            f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_content_dense.npy",
             all_embeddings[-len(lst_ctx):])
 
         for path in input_paths:
-            if path.startswith(f"embedding_data/{dataset_name}/{dataset_type}_dense") or not path.endswith(".npy"):
+            if path.startswith(f"embedding_data/{EMBEDDING_NAME}/{dataset_name}/{dataset_type}_dense") or not path.endswith(".npy"):
                 os.remove(path)
-
-        # with open(f"embedding_data/{dataset_name}/{dataset_type}_sparse.pkl", "wb") as f:
-        #     pickle.dump(all_embeddings["lexical_weights"], f)
-
-        # with open(f"embedding_data/{dataset_name}/multi_vec.pkl", "wb") as f:
-        #     pickle.dump(query_embeddings["colbert_vecs"], f)
 
         # save corresponding context array indices
         df_dataset.to_json(file_path, lines=True, orient="records")

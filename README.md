@@ -30,12 +30,12 @@ python init_multihop_rag.py
 
 ```sh
 python evaluation.py \
-    --state_dict "checkpoint/treehop__epoch=8&n_neg=5&neg_mode=paired&g_size=2048&mlp_size=2048&n_mlp=3&n_head=1&dropout=0.1&batch_size=64&lr=6e-05&temperature=0.15&weight_decay=2e-08.pt" \
+    --model_name_or_path "checkpoint/infonce_hotpotqa=0.055&musique=0.051&multihop=0.093__epoch=2&loss=infonce&n_neg=6&x_size=1024&g_size=2048&mlp_size=2048&n_mlp=3&n_head=1&n_layer=3&norm=rms&lr=2e-05&seed=1307.pt" \
     --dataset_name multihop_rag \
     --n_hop 3 \
     --top_n 5 \
-    --redundant_pruning \
-    --layerwise_top_pruning
+    --prune_redundant \
+    --prune_layer_top
 ```
 
 

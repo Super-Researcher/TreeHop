@@ -169,3 +169,5 @@ open_instruct/
 .task/
 2wiki_train_df_dataset.pkl
 2wiki_train_dgl_graph.bin
+# API keys
+*api_key*.txt
