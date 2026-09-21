@@ -146,6 +146,38 @@ class MultiHeadAttention2D(nn.Module):
         return attn_out * F.softmax(self.gate_layer(attn_out), dim=-1)
 
 
+def _rms_norm_kernel(x, weight, eps: float):
+    """RMS normalisation over the last dim, rescaled by ``weight``."""
+    variance = x.to(torch.float32).pow(2).mean(-1, keepdim=True)
+    x_normed = (x.to(torch.float32) * torch.rsqrt(variance + eps)).to(x.dtype)
+    return x_normed * weight
+
+
+class RMSNorm(nn.Module):
+    """Root-mean-square layer normalisation, implemented without depending on
+    ``torch.rms_norm`` / ``nn.RMSNorm`` (unavailable in older torch builds).
+
+    Normalises over the last dimension and rescales by a learnable ``weight``.
+    The parameter name and shape match :class:`torch.nn.RMSNorm`, so existing
+    checkpoints load unchanged. The elementwise math is left in plain eager form
+    so it fuses into the surrounding ``torch.compile``d node update (see
+    :func:`_infonce_node_update`) rather than compiling as an isolated kernel.
+    """
+
+    def __init__(self, size: int, eps: float | None = None, dtype=torch.float32):
+        super().__init__()
+        self.size = size
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(size, dtype=dtype))
+
+    def forward(self, x):
+        eps = self.eps if self.eps is not None else torch.finfo(x.dtype).eps
+        return _rms_norm_kernel(x, self.weight, eps)
+
+    def extra_repr(self) -> str:
+        return f"{self.size}, eps={self.eps}"
+
+
 def make_norm(norm: str, size: int):
     """Build the normalisation applied between stacked attentions.
 
@@ -156,7 +188,11 @@ def make_norm(norm: str, size: int):
     bias that shifts every query the same way. It stays available to ablate.
     """
     if norm == "rms":
-        return nn.RMSNorm(size, dtype=torch.float32)
+        # Prefer the native op when the build provides it (fused, fastest);
+        # fall back to the custom module when torch.rms_norm is missing.
+        if hasattr(torch, "rms_norm"):
+            return nn.RMSNorm(size, dtype=torch.float32)
+        return RMSNorm(size, dtype=torch.float32)
     if norm == "layer":
         return nn.LayerNorm(size, dtype=torch.float32)
     if norm == "none":
@@ -282,6 +318,100 @@ class LinearAttention3D(nn.Module):
         return V.contiguous()
 
 
+def _infonce_node_update(update_gate, forget_gate, Q, K):
+    """Pure-tensor core of :meth:`InfonceNode.reduce_func`: ``q - forget + update``.
+
+    This holds essentially all of TreeHop's FLOPs (both gates: projections,
+    embedding-level attention, residual MLPs and RMS norms). It is deliberately
+    free of any DGL op so it can be ``torch.compile``d into a single fused graph;
+    DGL's message-passing scheduler calls it per topological generation with a
+    varying leading dim (the node count), hence ``dynamic=True`` at compile time.
+    The value stream is the chunk ``K`` for the update gate and the query ``Q``
+    for the forget gate.
+    """
+    update = update_gate(Q, K, K)
+    forget = forget_gate(Q, K, Q)
+    return Q - forget + update
+
+
+def _ensure_inductor_cpp_compiler():
+    """Point TorchInductor's CPU backend at a C++ compiler that actually works.
+
+    The environment here exports a stale ``CXX`` (``gcc-14``, not installed) and
+    on macOS Homebrew GCC fails to compile torch's headers, so Inductor's default
+    search raises ``InvalidCxxCompiler``. On macOS the reliable choice is Apple
+    clang. This only overrides a broken/missing configuration and is a no-op when
+    a valid compiler is already set (e.g. gcc on a Linux GPU box). It installs
+    nothing and changes no package versions.
+    """
+    import os
+    import sys
+    import shutil
+
+    try:
+        from torch._inductor import config as ic
+    except Exception:
+        return
+
+    def _resolve(cand):
+        if not cand:
+            return None
+        return shutil.which(cand) or (cand if os.path.exists(cand) else None)
+
+    if sys.platform == "darwin":
+        # /usr/bin/g++ is an Apple-clang shim but torch would misdetect it as gcc
+        # by name; name it clang++ so the right compile flags are chosen.
+        candidates = ("clang++", "/usr/bin/clang++")
+    else:
+        current = ic.cpp.cxx
+        current = current[-1] if isinstance(current, (list, tuple)) else current
+        if _resolve(current):
+            return  # already valid, leave it alone
+        candidates = (os.environ.get("CXX"), "g++", "c++", "clang++")
+
+    for cand in candidates:
+        resolved = _resolve(cand)
+        if resolved:
+            ic.cpp.cxx = (resolved,)
+            os.environ["CXX"] = resolved
+            return
+
+
+class _FusedNodeUpdate:
+    """Dispatches to the ``torch.compile``d node update, latching permanently to
+    eager if the backend cannot compile on this platform (e.g. the Inductor CPU
+    backend with no C++ compiler, or a missing Triton install).
+
+    The whole TreeHop forward cannot be compiled because it is driven by DGL's
+    C++ topological scheduler (``dgl.prop_nodes_topo`` / ``prop_edges``), which
+    Dynamo cannot trace; this node update is the largest DGL-free region and
+    holds the model's real cost. The latch matters because DGL calls this once
+    per topological generation, so a failed compile must not be re-attempted on
+    every step.
+    """
+
+    def __init__(self, fn):
+        _ensure_inductor_cpp_compiler()
+        self._eager = fn
+        self._compiled = torch.compile(fn, dynamic=True)
+        self._compile_ok = True
+
+    def __call__(self, update_gate, forget_gate, Q, K):
+        # Used for both inference and training; torch.compile fuses the forward
+        # and its autograd backward. Falls back (once) to eager if the backend
+        # cannot compile.
+        if self._compile_ok:
+            try:
+                return self._compiled(update_gate, forget_gate, Q, K)
+            except Exception:
+                self._compile_ok = False
+        return self._eager(update_gate, forget_gate, Q, K)
+
+
+# Shared across instances; compiles lazily on first call.
+_infonce_node_update_fused = _FusedNodeUpdate(_infonce_node_update)
+
+
 class InfonceNode(nn.Module):
     def __init__(self, embed_size, g_size, mlp_size, n_mlp=1, n_head=1, n_layer=2, norm="rms"):
         super(InfonceNode, self).__init__()
@@ -303,17 +433,15 @@ class InfonceNode(nn.Module):
         )
 
     def reduce_func(self, nodes):
-        # message passing
+        # message passing. Extract plain tensors from the DGL NodeBatch here
+        # (DGL attribute access is not traceable), then run the compiled,
+        # DGL-free tensor core below.
         Q = nodes.mailbox["q"].clone().squeeze(1)         # last query
+        K = nodes.data["rep"]                             # this ctx (K and V_update)
 
-        K = nodes.data["rep"]           # this ctx
-        V_update = nodes.data["rep"]           # this ctx
-
-        update_gate = self.update_gate(Q, K, V_update)
-        forget_gate = self.forget_gate(Q, K, Q)
-
-        # add & norm
-        h = Q - forget_gate + update_gate
+        h = _infonce_node_update_fused(
+            self.update_gate, self.forget_gate, Q, K
+        )
         return {"h": h}
 
 
