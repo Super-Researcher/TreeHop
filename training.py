@@ -113,8 +113,10 @@ def parse_args():
         help="Name of the training set to be used"
     )
     parser.add_argument(
-        "--negative_dataset", type=str, default="hotpotqa_distractor",
-        help="Dataset whose corpus supplies the negative pool for contrastive learning"
+        "--negative_dataset", type=str, default=None,
+        help="Optional dataset whose corpus supplies an external negative pool for "
+             "contrastive learning. If unset, negatives are drawn from each sample's "
+             "own retrieved contexts, so no separate negative-pool embeddings are needed."
     )
     parser.add_argument(
         "--embedding_name", type=str, default="bge-m3",
@@ -239,10 +241,14 @@ if __name__ == '__main__':
         seed_env(args.seed, device=args.device)
 
     # create datasets
+    negative_dataset = (
+        f"embedding_data/{args.embedding_name}/{args.negative_dataset}/train_dense.npy"
+        if args.negative_dataset is not None else None
+    )
     train_set = EmbeddingRewriterTrainDataset(
         args.embedding_name, args.trainset_name, "train",
         num_negatives=args.n_neg,
-        negative_dataset=f"embedding_data/{args.embedding_name}/{args.negative_dataset}/train_dense.npy",
+        negative_dataset=negative_dataset,
         graph_cache_dir=args.graph_cache_dir,
         # mp_context=mp.get_context("spawn"),
     )
