@@ -101,7 +101,7 @@ class AttentionHead2D(nn.Module):
             raise IndexError(f"Not a supported input dimension: {Q.dim()}")
 
         scores = QK
-        attn = F.sigmoid(scores)
+        attn = F.softmax(scores, dim=-1)
         attn_out = self.dropout(attn) * V
 
         mlp_out = self.mlp(attn_out)
@@ -143,7 +143,7 @@ class MultiHeadAttention2D(nn.Module):
             lst_attn_out.append(out)
 
         attn_out = torch.cat(lst_attn_out, dim=-1)
-        return attn_out * F.sigmoid(self.gate_layer(attn_out))
+        return attn_out * F.softmax(self.gate_layer(attn_out), dim=-1)
 
 
 def make_norm(norm: str, size: int):
