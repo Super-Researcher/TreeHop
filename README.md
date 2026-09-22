@@ -1,5 +1,7 @@
 # TreeHop: Efficient Embedding-Level Query Rewriter 
 
+> **Note:** Due to the limited file size allowed on Anonymous GitHub, the train and benchmark datasets are not included in this repository. We will open-source them after the review phase.
+
 ## System Requirement
 > Ubuntu 18.06 LTS+ or MacOS Sequoia+.
   Nvidia GPU with 32GB of RAM at minimum.
