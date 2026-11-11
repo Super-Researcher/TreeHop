@@ -55,7 +55,7 @@ def gather_graph_contrastive_losses(
     num_negatives,
     loss="infonce",
     negative_mode="paired",
-    temperature=0.1
+    temperature=0.15
 ):
     y = g.ndata["y"]
     b_positives = (y == NodeType.relevant_doc.value) | (y == NodeType.leaf.value)
@@ -149,12 +149,18 @@ def parse_args():
         help="Whether to sample the training set using a 0-1 float number."
     )
     parser.add_argument(
+        "--holdout_frac", type=float, default=0.2,
+        help="Fraction (0-1) of the training set to hold out as a validation "
+             "split. The held-out split is never trained on and is used to "
+             "report a validation loss each epoch. Set to 0 to disable."
+    )
+    parser.add_argument(
         "--loss", type=str, default="infonce",
         choices=['infonce'],
         help="Type of loss for contrastive learning"
     )
     parser.add_argument(
-        "--n_neg", type=int, default=5,
+        "--n_neg", type=int, default=6,
         help="Number of negatives for each positive sample for contrastive learning"
     )
     parser.add_argument(
@@ -183,7 +189,7 @@ def parse_args():
         help="Number of attention heads per gate"
     )
     parser.add_argument(
-        "--n_layer", type=int, default=4,
+        "--n_layer", type=int, default=3,
         help="Number of stacked update blocks"
     )
     parser.add_argument(
@@ -204,7 +210,7 @@ def parse_args():
         help="Number of training batch size"
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-4,
+        "--lr", type=float, default=2e-5,
         help="Training learning rate"
     )
     parser.add_argument(
@@ -260,12 +266,49 @@ if __name__ == '__main__':
         )
         train_set = Subset(train_set, sample_idxs)
 
+    # Carve a held-out validation split out of the train set. The split is
+    # deterministic given --seed so train/holdout membership is reproducible
+    # across runs and never leaks between the two sets.
+    holdout_set = None
+    if args.holdout_frac and args.holdout_frac > 0:
+        if not 0 < args.holdout_frac < 1:
+            raise ValueError(
+                f"--holdout_frac must be in (0, 1), got {args.holdout_frac}"
+            )
+        n_total = len(train_set)
+        n_holdout = int(round(n_total * args.holdout_frac))
+        if n_holdout == 0 or n_holdout == n_total:
+            raise ValueError(
+                f"--holdout_frac={args.holdout_frac} yields an empty split for "
+                f"a train set of size {n_total}."
+            )
+        split_gen = torch.Generator().manual_seed(
+            args.seed if isinstance(args.seed, int) else 0
+        )
+        perm = torch.randperm(n_total, generator=split_gen).tolist()
+        holdout_idxs, train_idxs = perm[:n_holdout], perm[n_holdout:]
+        holdout_set = Subset(train_set, holdout_idxs)
+        train_set = Subset(train_set, train_idxs)
+        print(f"Held out {len(holdout_set)} / {n_total} samples "
+              f"({args.holdout_frac:.0%}) for validation; "
+              f"training on {len(train_set)}.")
+
     train_loader = DataLoader(
         dataset=train_set,
         batch_size=args.batch_size,
         collate_fn=partial(collate_batch, device=args.device),
         shuffle=True,
         num_workers=0,
+    )
+    holdout_loader = (
+        DataLoader(
+            dataset=holdout_set,
+            batch_size=args.batch_size,
+            collate_fn=partial(collate_batch, device=args.device),
+            shuffle=False,
+            num_workers=0,
+        )
+        if holdout_set is not None else None
     )
 
     # create the model
@@ -301,6 +344,11 @@ if __name__ == '__main__':
     epoch_train_loss = []
     epoch_eval_loss = []
     epoch_eval_score = []
+    # Track the epoch with the lowest held-out validation loss so the best
+    # model (not merely the last epoch) can be selected.
+    best_eval_loss = float("inf")
+    best_epoch = None
+    best_ckpt_path = None
     for epoch in (epoch_pbar:=tqdm(range(1, args.epoch + 1),
                                    desc="Epoch",
                                    position=0,
@@ -326,6 +374,28 @@ if __name__ == '__main__':
 
         print(f"Epoch {epoch} avg. loss: {np.mean(epoch_train_loss):.3f}")
         model.eval()
+
+        # Validation loss on the held-out split (no gradient updates).
+        if holdout_loader is not None:
+            with torch.no_grad():
+                for batch in tqdm(holdout_loader,
+                                  desc="Holdout step",
+                                  position=1,
+                                  leave=False,
+                                  mininterval=.5):
+                    g = batch.graph
+                    model(g)
+                    loss = gather_graph_contrastive_losses(
+                        g, loss=args.loss,
+                        negative_mode=args.neg_mode,
+                        num_negatives=args.n_neg, temperature=args.temperature
+                    )
+                    epoch_eval_loss.append(loss.item())
+            mean_eval_loss = float(np.mean(epoch_eval_loss))
+            print(f"Epoch {epoch} holdout loss: {mean_eval_loss:.3f}")
+        else:
+            mean_eval_loss = None
+
         d_stats = evaluate_retrieve(
             embedding_name=args.embedding_name,
             embedding_backend=args.embedding_backend,
@@ -347,10 +417,20 @@ if __name__ == '__main__':
                                  "loss", "n_neg", #"neg_mode",
                                  "seed"
                             )])
-        torch.save(
-            model.state_dict(),
-            f"{args.checkpoint_dir}/{args.model_cls}_{str_eval_stats}__epoch={epoch}&{str_args}.pt",
+        epoch_ckpt_path = (
+            f"{args.checkpoint_dir}/{args.model_cls}_{str_eval_stats}"
+            f"__epoch={epoch}&{str_args}.pt"
         )
+        torch.save(model.state_dict(), epoch_ckpt_path)
+
+        # Select the checkpoint with the lowest held-out validation loss.
+        if mean_eval_loss is not None and mean_eval_loss < best_eval_loss:
+            best_eval_loss = mean_eval_loss
+            best_epoch = epoch
+            best_ckpt_path = f"{args.checkpoint_dir}/{args.model_cls}_best.pt"
+            torch.save(model.state_dict(), best_ckpt_path)
+            print(f"New best holdout loss {best_eval_loss:.3f} at epoch {epoch}; "
+                  f"saved best checkpoint to '{best_ckpt_path}'")
 
         epoch_train_loss.clear()
         epoch_eval_loss.clear()
@@ -358,4 +438,10 @@ if __name__ == '__main__':
 
         model.reset_query()
 
-    # python training.py --graph_cache_dir train_data/ --loss infonce --temperature 0.08 --n_neg 5 --seed 1307
+    if best_epoch is not None:
+        print(f"Best epoch: {best_epoch} with holdout loss {best_eval_loss:.3f} "
+              f"(best checkpoint: '{best_ckpt_path}')")
+
+    # Reproduces the released checkpoint (see Appendix S, Table 21); dims/norm/temperature
+    # come from the argparse defaults above (lr=2e-5, n_neg=6, n_layer=3, temperature=0.15).
+    # python training.py --graph_cache_dir train_data/ --loss infonce --seed 1307

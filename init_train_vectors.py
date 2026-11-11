@@ -16,8 +16,9 @@ EMBEDDING_NAME = "bge-m3"
 
 
 lst_vectorize = [
-    ('2wiki', 'train'), ('2wiki', 'eval'),
-    ('musique', 'eval'), ('hotpotqa', 'train'),
+    ('musique', 'eval'), ('squad', 'train'),
+    ('nq', 'train'), ('mlqa', 'train'),
+    ('trex', 'train'),
 ]
 
 

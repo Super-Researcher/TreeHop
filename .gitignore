@@ -167,7 +167,7 @@ cython_debug/
 # Model checkpoint and Open Instruct logging folder
 open_instruct/
 .task/
-2wiki_train_df_dataset.pkl
-2wiki_train_dgl_graph.bin
+all_train_df_dataset.pkl
+all_train_dgl_graph.bin
 # API keys
 *api_key*.txt

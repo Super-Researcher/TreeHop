@@ -194,7 +194,7 @@ def _graph_propagator(row, num_negatives, idx_neg_start, n_total_contexts):
 
     # MuSiQue terminal edges are [P_last, "", answer]: the target is the *answer*
     # text (empty relation), which is deliberately not a passage title so the last
-    # paragraph is treated as a leaf.  _match_evidence_title is built for 2wiki,
+    # paragraph is treated as a leaf.
     # whose targets are real passages; run on a musique answer it fuzzy-matches the
     # answer back onto its own source paragraph (e.g. "Al Saud" -> "Prince ... Al
     # Saud"), producing a self-edge that trips the DAG check ("Detect loop in the

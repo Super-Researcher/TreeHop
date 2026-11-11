@@ -47,6 +47,10 @@ TRAIN_DATASET = {
     "pubhealth_train": "pubhealth_train_processed.jsonl",
     "musique_train": "musique_train_processed.jsonl",
     "train_truncated": "arc_c_hotpotqa_triviaqa_truncated.jsonl",
+    "squad_train": "squad_train_processed.jsonl",
+    "nq_train": "nq_train_processed.jsonl",
+    "mlqa_train": "mlqa_train_processed.jsonl",
+    "trex_train": "trex_train_processed.jsonl",
 }
 
 TRAIN_DATASET_REFINER_OUTPUT = {
